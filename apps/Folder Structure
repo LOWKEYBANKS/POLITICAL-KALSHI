@@ -1,0 +1,77 @@
+political-kalshi/
+├─ .env.example
+├─ docker-compose.yml
+├─ package.json
+├─ README.md
+├─ .gitignore
+├─ apps/
+│  ├─ frontend/                      # React app
+│  │  ├─ public/
+│  │  ├─ src/
+│  │  │  ├─ pages/
+│  │  │  │  ├─ Landing.tsx           # Public teaser page
+│  │  │  │  ├─ Dashboard.tsx         # Politician main interface
+│  │  │  │  ├─ BoostMarket.tsx       # Buy boosts
+│  │  │  │  ├─ PredictionPool.tsx    # YES/NO markets  
+│  │  │  │  └─ Reports.tsx           # Weekly summaries
+│  │  │  ├─ components/
+│  │  │  │  ├─ Leaderboard.tsx       # Rank display with sparklines
+│  │  │  │  ├─ TractionCard.tsx      # Individual politician card
+│  │  │  │  ├─ AlertTicker.tsx       # Rival activity feed
+│  │  │  │  └─ TimerDisplay.tsx      # Boost countdowns
+│  │  │  ├─ services/
+│  │  │  │  ├─ api.ts
+│  │  │  │  └─ socket.ts
+│  │  │  └─ styles/
+│  │  └─ package.json
+│  │
+│  └─ backend/                       # Node + TypeScript
+│     ├─ src/
+│     │  ├─ server.ts                # Express + Socket.IO entry
+│     │  ├─ app/
+│     │  │  ├─ routes/
+│     │  │  │  ├─ auth.routes.ts      # Login + politician verification
+│     │  │  │  ├─ market.routes.ts    # Prediction markets
+│     │  │  │  ├─ boost.routes.ts     # Boost purchases
+│     │  │  │  ├─ politician.routes.ts # Profiles + rankings
+│     │  │  │  └─ admin.routes.ts     # Platform control
+│     │  │  ├─ controllers/
+│     │  │  ├─ services/
+│     │  │  │  ├─ marketEngine.ts     # YES/NO contract resolution
+│     │  │  │  ├─ boostDecay.ts       # Timed boost expiration
+│     │  │  │  ├─ paymentService.ts   # M-Pesa integration
+│     │  │  │  ├─ notificationService.ts # Rival alerts
+│     │  │  │  └─ dataSimulator.ts   # Fake traction generation
+│     │  │  ├─ models/
+│     │  │  │  ├─ politician.model.ts
+│     │  │  │  ├─ market.model.ts
+│     │  │  │  ├─ transaction.model.ts
+│     │  │  │  └─ leaderboard.model.ts
+│     │  │  └─ middleware/
+│     │  │     ├─ auth.middleware.ts   # Politician-only access
+│     │  │     └── rateLimit.middleware.ts
+│     │  ├─ workers/
+│     │  │  ├─ marketResolver.ts      # Auto-resolve prediction markets
+│     │  │  ├─ scheduler.ts           # Daily leaderboard updates
+│     │  │  └── campaignCalendar.ts   # Auto-adjust system sensitivity
+│     │  └─ lib/
+│     │     ├─ mpesa/
+│     │     │  ├─ mpesa-client.ts      # Safaricom API wrapper
+│     │     │  └── webhookHandler.ts   # Payment verification
+│     │     └── utils.ts
+│     ├─ migrations/                   # Database schema
+│     └─ package.json
+│
+├─ database/
+│  ├─ migrations/
+│  ├─ seeds/
+│  └── schema.sql
+│
+├─ docs/
+│  ├─ architecture.md
+│  ├─ api-spec.yml
+│  └── deployment.md
+│
+└─ scripts/
+   ├─ setup.sh
+   └── seedTestData.js
