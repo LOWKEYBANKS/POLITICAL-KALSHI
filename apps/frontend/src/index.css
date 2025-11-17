@@ -1,0 +1,57 @@
+/* 🧠 GLOBAL PSYCHOLOGICAL WARFARE STYLES */
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+/* 🔥 HIGH-URGENCY ANIMATIONS */
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  50% { box-shadow: 0 0 20px 10px rgba(239, 68, 68, 0); }
+}
+
+@keyframes urgent-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ⚡ PSYCHOLOGICAL PRESSURE EFFECTS */
+.urgent-pulse {
+  animation: pulse-red 2s infinite;
+}
+
+.critical-alert {
+  animation: urgent-flash 1s infinite;
+}
+
+/* 🎯 REVENUE-DRIVEN BUTTONS */
+.panic-spend-button {
+  background: linear-gradient(45deg, #dc2626, #ef4444);
+  transition: all 0.2s;
+}
+
+.panic-spend-button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4);
+}
+
+/* ⏰ URGENT TIMERS */
+.decay-critical {
+  animation: urgent-flash 0.5s infinite;
+}
+
+/* 📊 STATUS ANXIETY */
+.position-drop {
+  color: #ef4444;
+  text-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+}
+
+/* 🎭 CAMPAIGN FOMO */
+.fomo-trigger {
+  background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.3), transparent);
+  animation: slide 3s infinite;
+}
+
+@keyframes slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
