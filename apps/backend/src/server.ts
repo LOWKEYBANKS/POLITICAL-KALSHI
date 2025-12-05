@@ -9,6 +9,27 @@ import { DataSimulator } from './services/dataSimulator';
 import { OrderMatcher } from './services/orderMatcher';
 import { MarketResolver } from './services/marketResolver';
 
+// Add these imports to the top of apps/backend/src/server.ts
+import eliteRoutes from './app/routes/elite.routes';
+import underdogRoutes from './app/routes/underdog.routes';
+
+// Then AFTER app.use(cors()) and BEFORE the health check endpoint, add:
+
+// ✅ ELITE PROFILING APIs - Zero signup for established politicians
+app.use('/api/elite', eliteRoutes);
+
+// ✅ UNDERDOG REGISTRATION APIs - Signups for aspiring politicians  
+app.use('/api/underdog', underdogRoutes);
+
+// Test routes
+app.get('/api/elite/test', (req, res) => {
+  res.json({ status: 'Elite profiling API ready', message: 'Zero signup experience operational' });
+});
+
+app.get('/api/underdog/test', (req, res) => {
+  res.json({ status: 'Underdog registration API ready', message: 'Growth-focused signup operational' });
+});
+
 interface PoliticianSession {
   id: string;
   politicianId: string;
