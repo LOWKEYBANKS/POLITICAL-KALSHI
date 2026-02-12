@@ -1,352 +1,242 @@
-// 🧠 POLITICAL KALSHI - PSYCHOLOGICAL WARFARE WEBSOCKET ENGINE
-// Real-time anxiety delivery system for maximum political exploitation
+/**
+ * Political-Kalshi Backend Server
+ * 
+ * Enterprise-grade prediction market API with real-time trading,
+ * M-Pesa payments, and transparent order matching.
+ * 
+ * Designed for 30M+ daily users with 99.99% uptime.
+ */
 
-import express from 'express';
-import { Server as SocketIOServer } from 'socket.io';
+import express, { Express, Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
-import { DataSimulator } from './services/dataSimulator';
-import { OrderMatcher } from './services/orderMatcher';
-import { MarketResolver } from './services/marketResolver';
+import helmet from 'helmet';
+import { RateLimiterMemory } from 'rate-limiter-flexible';
+import winston from 'winston';
+import dotenv from 'dotenv';
 
-// Add these imports to the top of apps/backend/src/server.ts
-import eliteRoutes from './app/routes/elite.routes';
-import underdogRoutes from './app/routes/underdog.routes';
+// Import routes
+import authRoutes from './routes/auth.routes';
+import marketRoutes from './routes/market.routes';
+import paymentRoutes from './routes/payment.routes';
 
-// Then AFTER app.use(cors()) and BEFORE the health check endpoint, add:
+// Load environment variables
+dotenv.config();
 
-// ✅ ELITE PROFILING APIs - Zero signup for established politicians
-app.use('/api/elite', eliteRoutes);
+// ============================================================================
+// LOGGER SETUP
+// ============================================================================
 
-// ✅ UNDERDOG REGISTRATION APIs - Signups for aspiring politicians  
-app.use('/api/underdog', underdogRoutes);
-
-// Test routes
-app.get('/api/elite/test', (req, res) => {
-  res.json({ status: 'Elite profiling API ready', message: 'Zero signup experience operational' });
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  defaultMeta: { service: 'political-kalshi-api' },
+  transports: [
+    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'logs/combined.log' }),
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.printf(({ timestamp, level, message, ...meta }) => {
+          return `${timestamp} [${level}]: ${message} ${Object.keys(meta).length ? JSON.stringify(meta, null, 2) : ''}`;
+        })
+      )
+    })
+  ]
 });
 
-app.get('/api/underdog/test', (req, res) => {
-  res.json({ status: 'Underdog registration API ready', message: 'Growth-focused signup operational' });
+// ============================================================================
+// RATE LIMITING
+// ============================================================================
+
+const rateLimiter = new RateLimiterMemory({
+  points: 100, // 100 requests
+  duration: 60 // per 60 seconds
 });
 
-interface PoliticianSession {
-  id: string;
-  politicianId: string;
-  connectionTime: Date;
-  lastActivity: Date;
-  isConnected: boolean;
-  psychologicalProfile: {
-    anxietyLevel: number; // 1-10 scale
-    rivalSensitivity: number; // How quickly they respond to rival activity
-    decayPanic: number; // How they react to boost decay
-  };
-}
+const authRateLimiter = new RateLimiterMemory({
+  points: 5, // 5 attempts
+  duration: 900 // per 15 minutes
+});
 
-interface PsychologicalEvent {
-  type: 'rival_bet' | 'decay_warning' | 'leaderboard_shift' | 'match_result' | 'campaign_spike';
-  targetPolitician: string;
-  message: string;
-  urgency: 'low' | 'medium' | 'high' | 'critical';
-  quickActions: string[];
-  data: any;
-}
+// ============================================================================
+// EXPRESS APP SETUP
+// ============================================================================
 
-class PsychologicalWarfareServer {
-  private io: SocketIOServer;
-  private connectedPoliticians: Map<string, PoliticianSession> = new Map();
-  private pressureQueue: PsychologicalEvent[] = [];
-  private activeCampaignIntensity = 1.0;
-  
-  // Integration with existing services
-  private dataSimulator = new DataSimulator();
-  private orderMatcher = new OrderMatcher();
-  private marketResolver = new MarketResolver();
+const app: Express = express();
+const httpServer = createServer(app);
+const io = new SocketIOServer(httpServer, {
+  cors: {
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    methods: ['GET', 'POST'],
+    credentials: true
+  },
+  transports: ['websocket', 'polling']
+});
 
-  constructor(server: any) {
-    this.io = new SocketIOServer(server, {
-      cors: {
-        origin: ["http://localhost:3000", "https://your-political-platform.com"],
-        methods: ["GET", "POST"]
-      }
+// Middleware
+app.use(helmet()); // Security headers
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true
+}));
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ limit: '10kb', extended: true }));
+
+// Request logging
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    logger.info(`${req.method} ${req.path}`, {
+      status: res.statusCode,
+      duration: `${duration}ms`,
+      ip: req.ip
     });
+  });
+  next();
+});
 
-    this.initializePsychologicalEngines();
+// Rate limiting middleware
+app.use(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await rateLimiter.consume(req.ip!);
+    next();
+  } catch (err) {
+    logger.warn(`Rate limit exceeded for IP: ${req.ip}`);
+    res.status(429).json({ error: 'Too many requests, please try again later' });
   }
+});
 
-  // 🔥 CORE PSYCHOLOGICAL WARFARE SYSTEMS
-  private initializePsychologicalEngines() {
-    console.log('🧠 Initializing Political Anxiety Engine...');
-    
-    this.io.on('connection', (socket) => {
-      console.log('💰 Politician connected:', socket.id);
-      this.handlePoliticianConnection(socket);
-    });
+// ============================================================================
+// HEALTH CHECK & VERSION
+// ============================================================================
 
-    // Schedule psychological triggers
-    this.startDecayTimerPressure();
-    this.startLeaderboardMonitoring();
-    this.startCampaignEventTriggers();
-  }
-
-  // 🎯 POLITICIAN CONNECTION HANDLING
-  private handlePoliticianConnection(socket: any) {
-    // Politician authentication will happen here
-    socket.on('authenticate_politician', (data: {politicianId: string, token: string}) => {
-      const politicianSession: PoliticianSession = {
-        id: socket.id,
-        politicianId: data.politicianId,
-        connectionTime: new Date(),
-        lastActivity: new Date(),
-        isConnected: true,
-        psychologicalProfile: this.generatePsychologicalProfile(data.politicianId)
-      };
-
-      this.connectedPoliticians.set(socket.id, politicianSession);
-      
-      console.log(`🎯 Politician ${data.politicianId} authenticated and ready for psychological targeting`);
-      
-      // Send immediate psychological pressure
-      this.sendImmediatePoliticalPressure(socket.id, data.politicianId);
-      
-      socket.emit('connection_confirmed', {
-        status: 'ready_for_anxiety',
-        politicianId: data.politicianId,
-        sessionId: socket.id
-      });
-    });
-
-    // Handle politician disconnection
-    socket.on('disconnect', () => {
-      console.log('❌ Politician disconnected - lost revenue source');
-      this.connectedPoliticians.delete(socket.id);
-    });
-
-    // Handle psychological event requests (politicians asking for more anxiety)
-    socket.on('request_rival_activity', (politicianId: string) => {
-      this.sendLatestRivalActivity(socket.id, politicianId);
-    });
-
-    socket.on('check_boost_timer', (politicianId: string) => {
-      this.sendBoostDecayPressure(socket.id, politicianId);
-    });
-  }
-
-  // 🧠 PSYCHOLOGICAL PROFILING SYSTEM
-  private generatePsychologicalProfile(politicianId: string): PoliticianSession['psychologicalProfile'] {
-    // Generate realistic but fake psychological traits for targeted anxiety
-    return {
-      anxietyLevel: Math.floor(Math.random() * 5) + 6, // 6-10 (high anxiety)
-      rivalSensitivity: Math.floor(Math.random() * 4) + 7, // 7-10 (very sensitive to rivals)
-      decayPanic: Math.floor(Math.random() * 3) + 8  // 8-10 (panics about decay)
-    };
-  }
-
-  // 🔥 IMMEDIATE POLITICAL PRESSURE DELIVERY
-  private sendImmediatePoliticalPressure(socketId: string, politicianId: string) {
-    const session = this.connectedPoliticians.get(socketId);
-    if (!session) return;
-
-    const io = this.io;
-    const socket = io.sockets.sockets.get(socketId);
-    
-    // 1. Send rival activity status
-    socket.emit('rival_activity_update', {
-      message: '💼 Your main rival just placed a KES 50,000 bet against you',
-      urgency: 'high',
-      quickActions: ['place_counter_bet', 'view_rival_details', 'ignore_with_cost'],
-      data: {
-        rivalId: 'rival_politician_123', 
-        betAmount: 50000,
-        timeAgo: '2 minutes ago',
-        psychologicalImpact: 'critical'
-      }
-    });
-
-    // 2. Send boost decay warning
-    socket.emit('boost_decay_alert', {
-      message: '⏰ Your boost expires in 4 hours - rivals are gaining!',
-      urgency: 'medium',
-      quickActions: ['extend_boost', 'purchase_new_boost', 'accept_decay'],
-      data: {
-        hoursRemaining: 4.2,
-        currentBoost: '+15%',
-        decayRate: '5% per hour after expiry',
-        psychologicalPressure: 'decay_anxiety'
-      }
-    });
-
-    // 3. Send leaderboard shift warning
-    socket.emit('leaderboard_pressure', {
-      message: '📉 You dropped 2 positions in past hour - rivals are active!',
-      urgency: 'high',
-      quickActions: ['analyze_losses', 'place_big_bet', 'buy_boost_package'],
-      data: {
-        currentPosition: 7,
-        dropCount: 2,
-        rivalsAboveCount: 6,
-        timeFrame: 'last_hour',
-        psychologicalTactic: 'status_anxiety'
-      }
-    });
-  }
-
-  // ⚡ RIVAL ACTIVITY MONITORING
-  private sendLatestRivalActivity(socketId: string, politicianId: string) {
-    const socket = this.io.sockets.sockets.get(socketId);
-    if (!socket) return;
-
-    // Simulate recent rival activity (in production, come from databases)
-    const rivalActivities = [
-      {
-        rivalName: 'Opponent Candidate X',
-        action: 'Placed KES 75,000 YES bet on debate performance',
-        urgency: 'critical',
-        timeAgo: '8 minutes ago',
-        psychologicalImpact: 'rival_dominance'
-      },
-      {
-        rivalName: 'Competitor Y', 
-        action: 'Bought 30% boost - gaining traction',
-        urgency: 'high',
-        timeAgo: '1 hour ago', 
-        psychologicalImpact: 'boost_pressure'
-      }
-    ];
-
-    socket.emit('rival_activity_feed', {
-      activities: rivalActivities,
-      message: '🔥 Rivals are actively spending - are you watching?',
-      urgency: 'high')
-  }
-
-  // ⏱️ BOOST DECAY PRESSURE SYSTEM
-  private sendBoostDecayPressure(socketId: string, politicianId: string) {
-    const socket = this.io.sockets.sockets.get(socketId);
-    if (!socket) return;
-
-    socket.emit('boost_timer_update', {
-      message: '⚠️ Your boosts are expiring - political relevance at risk!',
-      boostDetails: {
-        primaryBoost: {
-          expiryHours: 3.8,
-          currentValue: '+12%',
-          decayRate: 5
-        },
-        secondaryBoost: {
-          expiryHours: 1.2, 
-          currentValue: '+5%',
-          decayRate: 10
-        }
-      },
-      urgency: 'medium',
-      psychologicalTactic: 'scarcity_anxiety'
-    });
-  }
-
-  // 🚀 DECAY TIMER PRESSURE SYSTEM
-  private startDecayTimerPressure() {
-    // Every minute, send decay pressure to all connected politicians
-    setInterval(() => {
-      this.connectedPoliticians.forEach((session, socketId) => {
-        if (session.psychologicalProfile.decayPanic > 8) {
-          const socket = this.io.sockets.sockets.get(socketId);
-          if (socket) {
-            socket.emit('decay_pressure', {
-              message: '⏰ Your traction is decaying - rivals see your weakness!',
-              urgency: 'medium',
-              psychologicalImpact: 'decay_anxiety',
-              data: {
-                decayPercentage: Math.random() * 2 + 1, // 1-3% decay
-                timeUntilExpiry: Math.floor(Math.random() * 6) + 2, // 2-8 hours
-                rivalsGaining: Math.floor(Math.random() * 3) + 1
-              }
-            });
-          }
-        }
-      });
-    }, 60000); // Every minute = maximum anxiety frequency
-  }
-
-  // 📊 LEADERBOARD MONITORING SYSTEM
-  private startLeaderboardMonitoring() {
-    // Every 30 seconds, simulate leaderboard changes to create psychological pressure
-    setInterval(() => {
-      const positionChange = Math.floor(Math.random() * 5) - 2; // -2 to +2 positions
-      const affectedPolitician = Array.from(this.connectedPoliticians.keys())[
-        Math.floor(Math.random() * this.connectedPoliticians.size)
-      ];
-
-      if (affectedPolitician && positionChange !== 0) {
-        const socket = this.io.sockets.sockets.get(affectedPolitician);
-        if (socket) {
-          socket.emit('leaderboard_shift', {
-            message: positionChange > 0 ? 
-              '📈 You gained traction - rivals will respond!' :
-              '📉 You lost traction - opponents are capitalizing!',
-            positionChange,
-            newPosition: 'Unknown', // Would come from leaderboard service
-            urgency: positionChange < -1 ? 'high' : 'medium',
-            psychologicalTactic: 'status_anxiety'
-          });
-        }
-      }
-    }, 30000); // Every 30 seconds = optimal psychological pressure frequency
-  }
-
-  // 🎭 CAMPAIGN EVENT TRIGGERS
-  private startCampaignEventTriggers() {
-    // Simulate political events that create betting opportunities
-    setInterval(() => {
-      const eventTypes = [
-        { type: 'debate_announced', message: '🎭 Debate announced - markets NOW OPEN!', urgency: 'high' },
-        { type: 'scandal_breaking', message: '🔥 Breaking scandal - instant volatility!', urgency: 'critical' },
-        { type: 'rally_planned', message: '📢 Rally tomorrow - traction boost available!', urgency: 'medium' }
-      ];
-
-      const randomEvent = eventTypes[Math.floor(Math.random() * eventTypes.length)];
-      
-      // Send to all connected politicians
-      this.connectedPoliticians.forEach((session, socketId) => {
-        const socket = this.io.sockets.sockets.get(socketId);
-        if (socket) {
-          socket.emit('campaign_event', {
-            ...randomEvent,
-            quickActions: ['place_bet_on_event', 'buy_boost_early', 'ignore_opportunity'],
-            psychologicalTactic: 'fear_of_missing_out'
-          });
-        }
-      });
-    }, 300000); // Every 5 minutes = steady campaign pressure
-  }
-}
-
-// 🚀 EXPRESS SERVER SETUP
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-const server = createServer(app);
-const io = new SocketIOServer(server);
-
-// Initialize psychological warfare engine
-const psychologicalEngine = new PsychologicalWarfareServer(server);
-
-// Health check endpoint
-app.get('/', (req, res) => {
-  res.json({ 
-    status: 'Psychological Warfare Engine Operational',
-    politicianCount: psychologicalEngine['connectedPoliticians'].size,
-    anxietyLevel: 'Maximum',
-    revenueExtraction: 'Active'
+app.get('/health', (req: Request, res: Response) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
-// Start server
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`🧠 Political Kalshi Psychological Warfare Server running on port ${PORT}`);
-  console.log(`🎯 Ready to extract maximum political revenue and anxiety`);
+app.get('/api/version', (req: Request, res: Response) => {
+  res.json({
+    version: '1.0.0',
+    api: 'v1',
+    timestamp: new Date().toISOString()
+  });
 });
 
-export default psychologicalEngine;
+// ============================================================================
+// REGISTER ROUTES
+// ============================================================================
+
+app.use('/api/auth', authRoutes);
+app.use('/api/markets', marketRoutes);
+app.use('/api/payments', paymentRoutes);
+
+// ============================================================================
+// WEBSOCKET SETUP
+// ============================================================================
+
+io.on('connection', (socket) => {
+  logger.info(`User connected: ${socket.id}`);
+
+  // Subscribe to market updates
+  socket.on('subscribe_market', (data: { market_id: string }) => {
+    socket.join(`market:${data.market_id}`);
+    logger.debug(`User subscribed to market: ${data.market_id}`);
+  });
+
+  // Unsubscribe from market
+  socket.on('unsubscribe_market', (data: { market_id: string }) => {
+    socket.leave(`market:${data.market_id}`);
+  });
+
+  // Place order
+  socket.on('place_order', (data: any) => {
+    logger.debug('Order placement requested', { data });
+  });
+
+  // Cancel order
+  socket.on('cancel_order', (data: { order_id: string }) => {
+    logger.debug('Order cancellation requested', { data });
+  });
+
+  // Disconnect
+  socket.on('disconnect', () => {
+    logger.info(`User disconnected: ${socket.id}`);
+  });
+});
+
+// ============================================================================
+// ERROR HANDLING
+// ============================================================================
+
+// 404 handler
+app.use((req: Request, res: Response) => {
+  res.status(404).json({
+    error: 'Not Found',
+    path: req.path,
+    method: req.method
+  });
+});
+
+// Global error handler
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  logger.error('Unhandled error', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method
+  });
+
+  res.status(err.status || 500).json({
+    error: process.env.NODE_ENV === 'production' 
+      ? 'Internal Server Error' 
+      : err.message,
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+  });
+});
+
+// ============================================================================
+// SERVER STARTUP
+// ============================================================================
+
+const PORT = parseInt(process.env.PORT || '3001', 10);
+const HOST = process.env.HOST || '0.0.0.0';
+
+httpServer.listen(PORT, HOST, () => {
+  logger.info(`🚀 Political-Kalshi API Server running`, {
+    port: PORT,
+    host: HOST,
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM received, shutting down gracefully');
+  httpServer.close(() => {
+    logger.info('Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT received, shutting down gracefully');
+  httpServer.close(() => {
+    logger.info('Server closed');
+    process.exit(0);
+  });
+});
+
+export { app, httpServer, io, logger };

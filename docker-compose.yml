@@ -1,63 +1,92 @@
 version: '3.8'
 
 services:
+  # PostgreSQL Database
   postgres:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: political-kalshi-db
     environment:
-      POSTGRES_DB: political_kalshi
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres123
+      POSTGRES_USER: ${DB_USER:-kalshi}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev-password-change-in-production}
+      POSTGRES_DB: ${DB_NAME:-political_kalshi}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-kalshi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
-      - kalshi-network
+      - political-kalshi-network
 
+  # Redis Cache
   redis:
     image: redis:7-alpine
+    container_name: political-kalshi-cache
     ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
-      - kalshi-network
+      - political-kalshi-network
 
+  # Backend API
   backend:
     build:
-      context: ./apps/backend
-      dockerfile: Dockerfile
-    ports:
-      - "3001:3001"
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: political-kalshi-api
     environment:
-      NODE_ENV: development
-      DATABASE_URL: postgres://postgres:postgres123@postgres:5432/political_kalshi
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${BACKEND_PORT:-3001}
+      DATABASE_URL: postgresql://${DB_USER:-kalshi}:${DB_PASSWORD:-dev-password-change-in-production}@postgres:5432/${DB_NAME:-political_kalshi}
       REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      MPESA_CONSUMER_KEY: ${MPESA_CONSUMER_KEY}
+      MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET}
+      MPESA_SHORTCODE: ${MPESA_SHORTCODE}
+      MPESA_PASSKEY: ${MPESA_PASSKEY}
+      MPESA_ENV: ${MPESA_ENV:-sandbox}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
-      - ./apps/backend:/app
-      - /app/node_modules
+      - ./apps/backend/src:/app/src
+      - ./logs:/app/logs
     networks:
-      - kalshi-network
+      - political-kalshi-network
     restart: unless-stopped
 
+  # Frontend (optional - for development)
   frontend:
     build:
-      context: ./apps/frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: political-kalshi-web
     environment:
-      REACT_APP_API_URL: http://localhost:3001
-      REACT_APP_SOCKET_URL: http://localhost:3001
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
+      VITE_WS_URL: ${VITE_WS_URL:-http://localhost:3001}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      - backend
     volumes:
-      - ./apps/frontend:/app
-      - /app/node_modules
+      - ./apps/frontend/src:/app/src
     networks:
-      - kalshi-network
+      - political-kalshi-network
     restart: unless-stopped
 
 volumes:
@@ -65,5 +94,5 @@ volumes:
   redis_data:
 
 networks:
-  kalshi-network:
+  political-kalshi-network:
     driver: bridge
